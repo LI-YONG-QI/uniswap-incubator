@@ -17,9 +17,9 @@ struct MarketKey {
 
 struct Market {
     uint128 totalSupplyAssets;
-    uint128 totalSupplyShares; // TODO: not work now
+    uint128 totalSupplyShares;
     uint128 totalBorrowAssets;
-    uint128 totalBorrowShares; // TODO: not work now
+    uint128 totalBorrowShares;
     uint128 lastUpdate;
     uint128 fee;
 }
@@ -66,7 +66,7 @@ contract LendingCore is BaseHook {
     }
 
     function supply(MarketKey memory market, address onBehalf, uint256 assetsAmount) public {
-        bytes32 id = _getMarketId(market.collateralToken, market.irm);
+        bytes32 id = getMarketId(market.collateralToken, market.irm);
         uint256 shares = _getShares(assetsAmount, markets[id].totalSupplyAssets, markets[id].totalSupplyShares);
         markets[id].totalSupplyAssets += uint128(assetsAmount);
         markets[id].totalSupplyShares += uint128(shares);
@@ -75,11 +75,11 @@ contract LendingCore is BaseHook {
 
         emit Supply(id, onBehalf, assetsAmount);
 
-        IERC20(market.collateralToken).transferFrom(onBehalf, address(this), assetsAmount);
+        IERC20(loanToken).transferFrom(onBehalf, address(this), assetsAmount);
     }
 
     function withdraw(MarketKey memory market, address onBehalf, uint256 shares) public {
-        bytes32 id = _getMarketId(market.collateralToken, market.irm);
+        bytes32 id = getMarketId(market.collateralToken, market.irm);
         uint256 assetsAmount = _getAssets(shares, markets[id].totalSupplyAssets, markets[id].totalSupplyShares);
 
         markets[id].totalSupplyAssets -= uint128(assetsAmount);
@@ -89,7 +89,7 @@ contract LendingCore is BaseHook {
 
         emit Withdraw(id, onBehalf, shares);
 
-        IERC20(market.collateralToken).transfer(onBehalf, assetsAmount);
+        IERC20(loanToken).transfer(onBehalf, assetsAmount);
     }
 
     function _afterSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, BalanceDelta, bytes calldata)
@@ -102,20 +102,22 @@ contract LendingCore is BaseHook {
     }
 
     function createMarket(MarketKey memory market) public {
-        bytes32 id = _getMarketId(market.collateralToken, market.irm);
+        bytes32 id = getMarketId(market.collateralToken, market.irm);
         markets[id].lastUpdate = uint128(block.timestamp);
     }
 
-    function _getMarketId(address collateralToken, address interestRateModel) internal pure returns (bytes32) {
+    // TODO: to library
+    function getMarketId(address collateralToken, address interestRateModel) public pure returns (bytes32) {
         return keccak256(abi.encodePacked(collateralToken, interestRateModel));
     }
 
+    /// @dev occur error when totalSupplyShare or totalSupplyAssets is empty, so plus 1 to solve this
     function _getShares(uint256 assets, uint256 totalSupplyAssets, uint256 totalSupplyShares)
         internal
         pure
         returns (uint256)
     {
-        return (assets * totalSupplyShares) / totalSupplyAssets;
+        return (assets * (totalSupplyShares + 1)) / (totalSupplyAssets + 1);
     }
 
     function _getAssets(uint256 shares, uint256 totalSupplyAssets, uint256 totalSupplyShares)
@@ -123,7 +125,7 @@ contract LendingCore is BaseHook {
         pure
         returns (uint256)
     {
-        return (shares * totalSupplyAssets) / totalSupplyShares;
+        return (shares * (totalSupplyAssets + 1)) / (totalSupplyShares + 1);
     }
 
     function _interestRateModel() internal {}
